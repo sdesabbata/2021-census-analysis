@@ -1,0 +1,302 @@
+---
+title: '2021 Census: population and household change'
+author: "Stefano De Sabbata"
+date: '`r lubridate::now()`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(tidyverse)
+library(readxl)
+library(nomisr)
+library(skimr)
+library(ggrepel)
+library(patchwork)
+```
+
+
+This document uses the [population and household estimates](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/datasets/populationandhouseholdestimatesenglandandwalescensus2021) for England and Wales from the [Census 2021](https://census.gov.uk/) released on 28 June 2022. Source: [Office for National Statistics](https://www.ons.gov.uk/) licensed under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/).
+
+
+
+## Data
+
+The 2021 Census data have been downloaded to the `storage` folder using the script `001-download-data-2022-06-28.R` available in the `000-data` folder.
+
+### Load data
+
+Load 2021 Census data from the `storage` folder.
+
+```{r load_data}
+population_2021 <- readxl::read_xlsx(
+    path = "../storage/census2021firstresultsenglandwales1.xlsx",
+    sheet = "P01",
+    range = "A7:E382"
+  ) %>% 
+  rename(
+    area_code = `Area code [note 2]`,
+    area_name = `Area name`,
+    all_persons_2021 = `All persons`,
+    females_2021 = `Females`,
+    males_2021 = `Males`
+  )
+
+households_2021 <- readxl::read_xlsx(
+    path = "../storage/census2021firstresultsenglandwales1.xlsx",
+    sheet = "H01",
+    range = "A7:C382"
+  ) %>% 
+  rename(
+    area_code = `Area code [note 2]`,
+    area_name = `Area name`,
+    households_2021 = `Number of households with at least one usual resident`
+  )
+```
+
+### Join and filter LADs
+
+Join the resident population and household tables and keep only the Local Authority Districts (LADs).
+
+```{r get_lads}
+population_households_2021 <-
+  population_2021 %>% 
+  full_join(
+    households_2021
+  ) %>% 
+  filter(
+    str_sub(area_code, start = 1, end = 2) == "E0" |
+    str_sub(area_code, start = 1, end = 2) == "W0"
+  ) %>% 
+  mutate(
+    area_name = str_remove(area_name, "\\s*\\[.*\\]")
+  )
+```
+
+### 2011 Census
+
+Retrieve the 2011 Census data for comparison, using [`nomisr`](https://github.com/ropensci/nomisr).
+
+```{r get_2011_census_data}
+population_2011 <- 
+  nomis_get_data(
+    id = "NM_144_1",       # Usual resident population (KS101EW)
+    geography = "TYPE464", # local authorities: district / unitary (prior to April 2015)
+    tidy = TRUE
+  ) %>% 
+  filter(
+    cell_code %in% c("KS101EW0001", "KS101EW0002", "KS101EW0003") & 
+    rural_urban == 0 &
+    measures_name == "Value"
+  ) %>% 
+  select(geography_code, geography_name, cell_code, obs_value) %>% 
+  pivot_wider(
+    id_cols = c(geography_code, geography_name),
+    names_from = cell_code,
+    values_from = obs_value
+  ) %>% 
+  rename(
+    area_code = geography_code,
+    area_name = geography_name,
+    all_persons_2011 = KS101EW0001,
+    females_2011 = KS101EW0003,
+    males_2011 = KS101EW0002
+  )
+
+households_2011 <- 
+  nomis_get_data(
+    id = "NM_605_1",       # Household composition (KS105EW)
+    geography = "TYPE464", # local authorities: district / unitary (prior to April 2015)
+    tidy = TRUE
+  ) %>% 
+  filter(
+    cell_code %in% c("KS105EW0001") & 
+    rural_urban == 0 &
+    measures_name == "Value"
+  ) %>% 
+  select(geography_code, cell_code, obs_value) %>% 
+  pivot_wider(
+    id_cols = geography_code,
+    names_from = cell_code,
+    values_from = obs_value
+  ) %>% 
+  rename(
+    area_code = geography_code,
+    households_2011 = KS105EW0001
+  )
+```
+
+### Join 2021 and 2011 data
+
+The following changes need to be resolved:
+
+- North Northamptonshire UA comprises the former districts of Corby, East Northamptonshire, Kettering and Wellingborough (Changed 2021).
+- West Northamptonshire UA comprises the former districts of Daventry, Northampton, and South Northamptonshire (Changed 2021).
+- East Suffolk LA comprises of Suffolk Coastal and Waveney (Changed 2020).
+- West Suffolk LA comprises of Forest Heath and St Edmundsbury (Changed 2019).
+- Buckinghamshire UA comprises of Aylesbury Vale, Chiltern, South Bucks and Wycombe (Changed 2020).
+- Folkestone and Hythe previously named Shepway (Changed 2018).
+- Bournemouth, Christchurch and Poole UA comprises the former district of Christchurch and the former UAs of Bournemouth and Poole (Changed 2019).
+- Dorset UA comprises the former districts of East Dorset, North Dorset, Purbeck, West Dorset and Weymouth and Portland (Changed 2019).
+- Somerset West and Taunton LA comprises of Taunton Deane and West Somerset (Changed 2019).
+
+```{r}
+population_households_2011 <-
+  population_2011 %>% 
+  left_join(households_2011) %>%
+  mutate(
+    area_name = case_when(
+      
+      area_name == "Corby" ~ "North Northamptonshire", 
+      area_name == "East Northamptonshire" ~ "North Northamptonshire", 
+      area_name == "Kettering" ~ "North Northamptonshire", 
+      area_name == "Wellingborough" ~ "North Northamptonshire",
+      
+      area_name == "Daventry" ~ "West Northamptonshire", 
+      area_name == "Northampton" ~ "West Northamptonshire", 
+      area_name == "South Northamptonshire" ~ "West Northamptonshire",
+      
+      area_name == "Suffolk Coastal" ~ "East Suffolk", 
+      area_name == "Waveney" ~ "East Suffolk",
+      
+      area_name == "Forest Heath" ~ "West Suffolk", 
+      area_name == "St Edmundsbury" ~ "West Suffolk",
+      
+      area_name == "Aylesbury Vale" ~ "Buckinghamshire", 
+      area_name == "Chiltern" ~ "Buckinghamshire", 
+      area_name == "South Bucks" ~ "Buckinghamshire", 
+      area_name == "Wycombe" ~ "Buckinghamshire",
+      
+      area_name == "Shepway" ~ "Folkestone and Hythe",
+      
+      area_name == "Christchurch" ~ "Bournemouth, Christchurch and Poole", 
+      area_name == "Bournemouth" ~ "Bournemouth, Christchurch and Poole", 
+      area_name == "Poole" ~ "Bournemouth, Christchurch and Poole",
+      
+      area_name == "East Dorset" ~ "Dorset", 
+      area_name == "North Dorset" ~ "Dorset", 
+      area_name == "Purbeck" ~ "Dorset", 
+      area_name == "West Dorset" ~ "Dorset", 
+      area_name == "Weymouth and Portland" ~ "Dorset",
+      
+      area_name == "Taunton Deane" ~ "Somerset West and Taunton", 
+      area_name == "West Somerset" ~ "Somerset West and Taunton",
+      
+      TRUE ~ area_name
+    )
+  ) %>% 
+  mutate(
+    area_code = case_when(
+      area_name == "North Northamptonshire" ~ "E06000061", # E06000061	North Northamptonshire [note 3]
+      area_name == "West Northamptonshire" ~ "E06000062", # E06000062	West Northamptonshire [note 4]
+      area_name == "East Suffolk" ~ "E07000244", # E07000244	East Suffolk [note 5]
+      area_name == "West Suffolk" ~ "E07000245", # E07000245	West Suffolk [note 6]
+      area_name == "Buckinghamshire" ~ "E06000060", # E06000060	Buckinghamshire [note 7]
+      area_name == "Folkestone and Hythe" ~ "E07000112", # E07000112	Folkestone and Hythe [note 8]
+      area_name == "Bournemouth, Christchurch and Poole" ~ "E06000058", # E06000058	Bournemouth, Christchurch and Poole [note 9]
+      area_name == "Dorset" ~ "E06000059", # E06000059	Dorset [note 10]
+      area_name == "Somerset West and Taunton" ~ "E07000246", # E07000246	Somerset West and Taunton [note 11]
+      TRUE ~ area_code
+    )
+  ) %>% 
+  group_by(area_code, area_name) %>% 
+  summarise(
+    across(
+      all_persons_2011:households_2011,
+      ~ sum(.x)
+    )
+  )
+```
+
+
+```{r join_2021_2011}
+population_households <-
+  population_households_2021 %>% 
+  left_join(
+    population_households_2011 %>% 
+      select(-area_name)
+  ) 
+```
+
+### Data summary
+
+```{r skim_population_households}
+population_households %>% 
+  skim()
+```
+
+
+## Visualisation
+
+Exploring the relationship between resident population and household change.
+
+```{r scatterplot, fig.height=7, fig.width=7}
+population_households %>% 
+  mutate(
+    plot_label = case_when(
+      area_name == "Leicester" ~ "Leicester",
+      area_name == "Barking and Dagenham" ~ "Barking and\nDagenham",
+      area_name == "Slough" ~ "Slough",
+      TRUE ~ ""
+    ),
+    plot_fill = case_when(
+      area_name == "Leicester" ~ "Leicester",
+      area_name == "Blaby" ~ "Leicestershire",
+      area_name == "Charnwood" ~ "Leicestershire",
+      area_name == "Harborough" ~ "Leicestershire",
+      area_name == "Hinckley and Bosworth" ~ "Leicestershire",
+      area_name == "Melton" ~ "Leicestershire",
+      area_name == "North West Leicestershire" ~ "Leicestershire",
+      area_name == "Oadby and Wigston" ~ "Leicestershire",
+      TRUE ~ "Other"
+    )
+  ) %>% 
+  arrange(desc(plot_fill)) %>% 
+  ggplot(
+    aes(
+      x = (((all_persons_2021 - all_persons_2011) / all_persons_2011)) * 100,
+      y = (((households_2021 - households_2011) / households_2011)) * 100,
+      fill = plot_fill
+    )
+  ) +
+  geom_point(shape = 21, colour = "#666666") +
+  geom_text_repel(
+    aes(label = plot_label),
+    colour = "#666666", 
+    size = 3,
+    force = 1,
+    force_pull = 0.1,
+    box.padding = 0.5,
+    min.segment.length = 0,
+    segment.curvature = -0.1
+  ) + 
+  geom_abline(
+    slope = 1,
+    intercept = 0
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Leicester" = "#377eb8",
+      "Leicestershire" = "#e41a1c",
+      "Other" = "#999999"
+    )
+  ) +
+  xlab("All persons (percentage change)") +
+  ylab("Households (percentage change)") +
+  guides(
+   fill = guide_legend(
+     title = "Area"
+   )
+  ) +
+  labs(
+    title = "Comparing resident population and households change",
+    subtitle = "between the 2011 and 2021 Census, per Local Authority District in England and Wales",
+    caption = "\n\nSource: Office for National Statistics licensed under the Open Government Licence"
+  ) +
+  coord_fixed(ratio = 1) +
+  theme_bw()
+```
+
