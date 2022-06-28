@@ -2,14 +2,18 @@
 title: '2021 Census: population and household change'
 author: "Stefano De Sabbata"
 date: '`r lubridate::now()`'
-output: html_document
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r libraries}
+```{r libraries, warning=FALSE, message=FALSE}
 library(tidyverse)
 library(readxl)
 library(nomisr)
