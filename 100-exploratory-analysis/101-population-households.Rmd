@@ -303,7 +303,7 @@ scatterplot_population_households_2011 <-
    )
   ) +
   labs(
-    title = "Comparing resident population and households change",
+    title = "Comparing resident population and households",
     subtitle = "2011 Census, per Local Authority District\nin England and Wales",
     caption = "\nby Stefano De Sabbata, University of Leicester\nSource: Office for National Statistics licensed under the Open Government Licence"
   ) +
@@ -373,7 +373,7 @@ scatterplot_population_households_2021 <-
    )
   ) +
   labs(
-    title = "Comparing resident population and households change",
+    title = "Comparing resident population and households",
     subtitle = "2021 Census, per Local Authority District\nin England and Wales",
     caption = "\nby Stefano De Sabbata, University of Leicester\nSource: Office for National Statistics licensed under the Open Government Licence"
   ) +
