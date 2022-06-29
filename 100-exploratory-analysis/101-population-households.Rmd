@@ -293,8 +293,8 @@ scatterplot_population_households_2011 <-
   ) +
   # scale_x_log10(labels = comma) +
   # scale_y_log10(labels = comma) +
-  scale_x_continuous(labels = comma) +
-  scale_y_continuous(labels = comma) +
+  scale_x_continuous(labels = comma, limits = c(-30000, 1200000)) +
+  scale_y_continuous(labels = comma, limits = c(-10000, 450000)) +
   xlab("All persons") +
   ylab("Households") +
   guides(
@@ -363,8 +363,8 @@ scatterplot_population_households_2021 <-
   ) +
   # scale_x_log10(labels = comma) +
   # scale_y_log10(labels = comma) +
-  scale_x_continuous(labels = comma) +
-  scale_y_continuous(labels = comma) +
+  scale_x_continuous(labels = comma, limits = c(-30000, 1200000)) +
+  scale_y_continuous(labels = comma, limits = c(-10000, 450000)) +
   xlab("All persons") +
   ylab("Households") +
   guides(
