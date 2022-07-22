@@ -408,8 +408,8 @@ scatterplot_population_households_change <-
   arrange(desc(plot_fill)) %>% 
   ggplot(
     aes(
-      x = (((all_persons_2021 - all_persons_2011) / all_persons_2011)) * 100,
-      y = (((households_2021 - households_2011) / households_2011)) * 100,
+      x = (((all_persons_2021 - all_persons_2011) / all_persons_2011) * 100),
+      y = (((households_2021 - households_2011) / households_2011) * 100),
       fill = plot_fill
     )
   ) +
@@ -452,6 +452,151 @@ scatterplot_population_households_change <-
   theme(legend.position = "bottom")
 ```
 
+```{r scatterplot_change_leics}
+scatterplot_population_households_change_leics <-
+  population_households %>% 
+  mutate(
+    plot_label = case_when(
+      area_name == "Leicester" ~ "Leicester",
+      area_name == "Blaby" ~ "Blaby",
+      area_name == "Charnwood" ~ "Charnwood",
+      area_name == "Harborough" ~ "Harborough",
+      area_name == "Hinckley and Bosworth" ~ "Hinckley and\nBosworth",
+      area_name == "Melton" ~ "Melton",
+      area_name == "North West Leicestershire" ~ "North West\nLeicestershire",
+      area_name == "Oadby and Wigston" ~ "Oadby and Wigston",
+      TRUE ~ ""
+    ),
+    plot_fill = case_when(
+      area_name == "Leicester" ~ "Leicester",
+      area_name == "Blaby" ~ "Leicestershire",
+      area_name == "Charnwood" ~ "Leicestershire",
+      area_name == "Harborough" ~ "Leicestershire",
+      area_name == "Hinckley and Bosworth" ~ "Leicestershire",
+      area_name == "Melton" ~ "Leicestershire",
+      area_name == "North West Leicestershire" ~ "Leicestershire",
+      area_name == "Oadby and Wigston" ~ "Leicestershire",
+      TRUE ~ "Other"
+    ),
+    plot_alpha = case_when(
+      area_name == "Leicester" ~ 1.0,
+      area_name == "Blaby" ~ 1.0,
+      area_name == "Charnwood" ~ 1.0,
+      area_name == "Harborough" ~ 1.0,
+      area_name == "Hinckley and Bosworth" ~ 1.0,
+      area_name == "Melton" ~ 1.0,
+      area_name == "North West Leicestershire" ~ 1.0,
+      area_name == "Oadby and Wigston" ~ 1.0,
+      TRUE ~ 0.4
+    )
+  ) %>% 
+  arrange(desc(plot_fill)) %>% 
+  ggplot(
+    aes(
+      x = (((all_persons_2021 - all_persons_2011) / all_persons_2011) * 100),
+      y = (((households_2021 - households_2011) / households_2011) * 100),
+      fill = plot_fill,
+      alpha = plot_alpha
+    )
+  ) +
+  geom_point(shape = 21, colour = "#666666") +
+  geom_text_repel(
+    aes(label = plot_label),
+    colour = "#666666", 
+    size = 3,
+    force = 5,
+    force_pull = 0,
+    box.padding = 0.5,
+    min.segment.length = 0,
+    segment.curvature = -0.1,
+    max.overlaps = Inf
+  ) + 
+  geom_abline(
+    slope = 1,
+    intercept = 0
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Leicester" = "#377eb8",
+      "Leicestershire" = "#e41a1c",
+      "Other" = "#CCCCCC"
+    )
+  ) +
+  xlab("All persons (percentage change)") +
+  ylab("Households (percentage change)") +
+  guides(
+   fill = guide_legend(
+     title = "Area"
+   ),
+   alpha = FALSE
+  ) +
+  labs(
+    title = "Comparing resident population and households change",
+    subtitle = "between the 2011 and 2021 Census, per Local Authority District\nin England and Wales",
+    caption = "\nby Stefano De Sabbata, University of Leicester\nSource: Office for National Statistics licensed under the Open Government Licence"
+  ) +
+  coord_fixed(ratio = 1) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+
+```{r scatterplot_change_colour}
+scatterplot_population_households_change_colour <-
+  population_households %>% 
+  mutate(
+    plot_label = case_when(
+      area_name == "Leicester" ~ "Leicester",
+      area_name == "Barking and Dagenham" ~ "Barking and\nDagenham",
+      area_name == "Slough" ~ "Slough",
+      area_name == "Newham" ~ "Newham",
+      area_name == "Redbridge" ~ "Redbridge",
+      TRUE ~ ""
+    )
+  ) %>% 
+  ggplot(
+    aes(
+      x = (((all_persons_2021 - all_persons_2011) / all_persons_2011) * 100),
+      y = (((households_2021 - households_2011) / households_2011) * 100),
+      fill = -1 * ((
+          (-1 * (all_persons_2021 - all_persons_2011) / all_persons_2011) +
+          (1 * (households_2021 - households_2011) / households_2011)
+        ) / sqrt(2))
+    )
+  ) +
+  geom_point(shape = 21, colour = "#666666") +
+  geom_text_repel(
+    aes(label = plot_label),
+    colour = "#666666", 
+    size = 3,
+    force = 1,
+    force_pull = 0.1,
+    box.padding = 0.5,
+    min.segment.length = 0,
+    segment.curvature = -0.1
+  ) + 
+  geom_abline(
+    slope = 1,
+    intercept = 0
+  ) +
+  scale_fill_distiller(palette = "PuOr")+
+  xlab("All persons (percentage change)") +
+  ylab("Households (percentage change)") +
+  guides(
+   fill = guide_legend(
+     title = "Area"
+   )
+  ) +
+  labs(
+    title = "Comparing resident population and households change",
+    subtitle = "between the 2011 and 2021 Census, per Local Authority District\nin England and Wales",
+    caption = "\nby Stefano De Sabbata, University of Leicester\nSource: Office for National Statistics licensed under the Open Government Licence"
+  ) +
+  coord_fixed(ratio = 1) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
 ```{r marginal}
 marginal_population_households_change <-
   ggMarginal(
@@ -471,6 +616,8 @@ print(scatterplot_population_households_2021)
 
 ```{r print_scatterplot_population_households_change, fig.height=8, fig.width=7}
 print(scatterplot_population_households_change)
+print(scatterplot_population_households_change_leics)
+print(scatterplot_population_households_change_colour)
 ```
 
 ```{r marginal_print, fig.height=8, fig.width=8}
