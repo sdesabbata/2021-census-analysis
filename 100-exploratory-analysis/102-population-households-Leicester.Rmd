@@ -1,0 +1,312 @@
+---
+title: '2021 Census: population and household change in Leicester'
+author: "Stefano De Sabbata"
+date: '`r lubridate::now()`'
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(nomisr)
+library(skimr)
+library(ggrepel)
+library(ggExtra)
+require(scales)
+library(classInt)
+library(sf)
+library(ggmap)
+library(ggsflabel)
+library(mapsf)
+```
+
+
+This document uses the [Demography and migration data](https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/articles/demographyandmigrationdatacontent/2022-11-02#demography-unrounded-population-estimates) for England and Wales from the [Census 2021](https://census.gov.uk/) released on 2 November 2022, as well as [Output Areas (December 2021) Boundaries Generalised Clipped EW (BGC)](https://geoportal.statistics.gov.uk/datasets/ons::output-areas-december-2021-boundaries-generalised-clipped-ew-bgc/about) and the [OAs to LSOAs to MSOAs (2021) to Local Enterprise Partnership to LAD (May 2022) Lookup in England](https://geoportal.statistics.gov.uk/datasets/ons::oas-to-lsoas-to-msoas-2021-to-local-enterprise-partnership-to-lad-may-2022-lookup-in-england-/about). Source: [Office for National Statistics](https://www.ons.gov.uk/) licensed under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/). Contains both Ordnance Survey and ONS Intellectual Property Rights. Contains OS data © Crown copyright and database right 2022.
+
+
+## Data
+
+The 2021 Census data have been downloaded to the `storage` folder using the scripts `002-download-data-2022-11-02.R` and `003-download-oa-geometries.R` available in the `000-data` folder.
+
+### Load data
+
+Load 2021 Census data from the `storage` folder.
+
+```{r load_data}
+population_density_2021 <- read_csv(
+    "../storage/atc-ts-demmig-ur-pd-oa-oa.csv"
+  ) %>% 
+  rename(
+    OA21CD = `Output Areas Code`,
+    OA21NM = `Output Areas Label`,
+    population_density = `Population Density`
+  )
+
+oa_2021_geo <-
+  st_read("../storage/Leicester_2021_OAs.geojson")
+
+population_2021_est <-
+  oa_2021_geo %>% 
+  st_transform(crs = 27700) %>% 
+  mutate(
+    area = st_area(geometry) %>% as.numeric()
+  ) %>% 
+  st_drop_geometry() %>% 
+  left_join(
+    population_density_2021
+  ) %>% 
+  mutate(
+    population = as.numeric(round(population_density * (area / 1000000)))
+  ) %>% 
+  select(OA21CD, population_density, area, population)
+
+households_2021 <- read_csv(
+    "../storage/atc-ts-demmig-hh-ct-oa-oa.csv"
+  ) %>% 
+  rename(
+    OA21CD = `Output Areas Code`,
+    OA21NM = `Output Areas Label`,
+    households = `Count`
+  )
+```
+
+```{r pop_household_join}
+pop_hh_2021 <-
+  oa_2021_geo %>% 
+  left_join(
+    population_2021_est
+  ) %>% 
+  left_join(
+    households_2021
+  ) %>% 
+  mutate(
+    pop_hh_2021 = population / households
+  )
+```
+
+```{r get_2011_census_data}
+pop_hh_2011 <-
+  st_read("../storage/Leicester_2011_OAs_population_households.geojson") %>% 
+  mutate(
+    pop_hh_2011 = all_persons_2011 / households_2011
+  )
+```
+
+### Check density estimation
+
+Checking for outliers in the density estimation.
+
+```{r}
+popdens_area_model <-
+  population_2021_est %>% 
+  lm(
+    log10(population_density) ~
+      log10(area),
+    data = .
+  )
+
+popdens_area_model %>% 
+  summary()
+
+population_2021_est_lm <-
+  population_2021_est %>% 
+  mutate(
+    cooksd =
+      popdens_area_model %>% 
+      cooks.distance()
+  )
+```
+
+
+```{r}
+population_2021_est_lm %>% 
+  mutate(
+    plot_label = if_else(
+      cooksd > 0.01, 
+      OA21CD, NA_character_
+    )
+  ) %>% 
+  ggplot(
+    aes(
+      x = area,
+      y = population_density,
+      colour = cooksd,
+      label = plot_label
+    )
+  ) +
+  scale_color_viridis_c(option = "inferno", direction = -1) +
+  geom_point() +
+  geom_text_repel() +
+  scale_x_log10() +
+  scale_y_log10() +
+  theme_bw()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide', fig.height = 8, fig.width = 8}
+pop_hh_2021 %>% 
+  left_join(
+    population_2021_est_lm %>% 
+      mutate(
+        plot_label = if_else(
+          cooksd > 0.01, 
+          OA21CD, NA_character_
+        )
+      )
+  ) %>% 
+  ggplot() +
+  geom_sf(
+    mapping = aes(
+      fill = plot_label,
+      geometry = geometry
+    ),
+    inherit.aes = FALSE,
+    color = NA,
+    alpha = 0.8
+  ) +
+  geom_sf_label_repel(
+    mapping = aes(label = plot_label)
+  ) +
+  #coord_sf(crs = st_crs(4326)) +
+  #ggtitle("Geodemographic classification of dwellings") +
+  xlab("") + ylab("") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    legend.position = "none",
+    panel.border = element_rect(colour = "black", fill=NA, size=1)
+  ) +
+  labs(caption = "Source: Office for National Statistics, Census 2021.\nContains National Statistics data Crown copyright and database right 2022;\nContains Ordnance Survey data Crown copyright and database right 2022.")
+```
+
+
+## Exploring population and households
+
+```{r, warning=FALSE, message=FALSE}
+leicester_ggmap <-
+  ggmap(
+    get_stamenmap(
+      c(left = -1.225, bottom = 52.575, right = -1.0, top = 52.7),
+      zoom = 14,
+      maptype = "toner"
+    )
+  )
+
+```
+
+```{r}
+pop_hh_maps_values <-
+  pop_hh_2021 %>% 
+  pull(pop_hh_2021) %>% 
+  c(
+    pop_hh_2011 %>% 
+    pull(pop_hh_2011)
+  )
+
+pop_hh_maps_breaks <-
+  classIntervals(
+    c(
+      pop_hh_maps_values %>% min() %>% subtract(0.000001),
+      pop_hh_maps_values,
+      pop_hh_maps_values %>% max() %>% add(0.000001)
+    ), 
+    n = 9, 
+    style = "jenks"
+  ) %$%
+  brks
+
+pop_hh_maps_cats <-
+  pop_hh_maps_values %>% 
+  cut(pop_hh_maps_breaks) %>% 
+  unique()
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide', fig.height = 8, fig.width = 8}
+leicester_ggmap +
+  geom_sf(
+    data = 
+      pop_hh_2011 %>% 
+      mutate(
+        pop_hh_2011_breaks =
+          cut(
+            pop_hh_2011,
+            pop_hh_maps_breaks
+          )
+      ),
+    mapping = aes(
+      fill = pop_hh_2011_breaks,
+      geometry = geometry
+    ),
+    inherit.aes = FALSE,
+    color = NA,
+    alpha = 0.8
+  ) +
+  scale_fill_viridis_d(drop = FALSE) +
+  coord_sf(crs = st_crs(4326)) +
+  #ggtitle("Geodemographic classification of dwellings") +
+  xlab("") + ylab("") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    #legend.position = "none",
+    panel.border = element_rect(colour = "black", fill=NA, size=1)
+  ) +
+  labs(caption = "Source: Office for National Statistics, Census 2011.\nContains National Statistics data Crown copyright and database right 2011;\nContains Ordnance Survey data Crown copyright and database right 2020.\nMap tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under ODbL.")
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='hide', fig.height = 8, fig.width = 8}
+leicester_ggmap +
+  geom_sf(
+    data = 
+      pop_hh_2021 %>% 
+      mutate(
+        pop_hh_2021_breaks =
+          cut(
+            pop_hh_2021,
+            pop_hh_maps_breaks
+          )
+      ),
+    mapping = aes(
+      fill = pop_hh_2021_breaks,
+      geometry = geometry
+    ),
+    inherit.aes = FALSE,
+    color = NA,
+    alpha = 0.8
+  ) +
+  scale_fill_viridis_d(drop = FALSE) +
+  coord_sf(crs = st_crs(4326)) +
+  #ggtitle("Geodemographic classification of dwellings") +
+  xlab("") + ylab("") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    #legend.position = "none",
+    panel.border = element_rect(colour = "black", fill=NA, size=1)
+  ) +
+  labs(caption = "Source: Office for National Statistics, Census 2021.\nContains National Statistics data Crown copyright and database right 2022;\nContains Ordnance Survey data Crown copyright and database right 2022.\nMap tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under ODbL.")
+```
+
+<!--
+
+### Change 2011 to 2021
+
+```{r}
+oa_2011to2021 <-
+  read_csv("../storage/Leicester_2011to2021_OAs.csv")
+```
+
+-->
